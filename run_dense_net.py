@@ -8,8 +8,8 @@ train_params_cifar = {
     'n_epochs': 10,
     'increasing_growth_rate': 4,
     'initial_learning_rate': 0.1,
-    'reduce_lr_epoch_1': 2,  # epochs * 0.5
-    'reduce_lr_epoch_2': 3,  # epochs * 0.75
+    'reduce_lr_epoch_1': 5,  # epochs * 0.5
+    'reduce_lr_epoch_2': 7,  # epochs * 0.75
     'validation_set': True,
     'validation_split': None,  # None or float
     'shuffle': 'every_epoch',  # None, once_prior_train, every_epoch

@@ -281,11 +281,11 @@ class CondenseNet:
         assert _input.get_shape()[-1] % self.group == 0, "group number cannot be divided by input channels"
         assert _input.get_shape()[-1] % self.condense_factor == 0, "condensation factor can not be divided by input channels"
         weight = self.weight_variable_msra(shape=[kernel_size, kernel_size, in_channels, out_channels],
-                                            name="weight")
+                                           name="weight")
         print(weight)
-        mask = tf.get_variable("mask", [mask_scale], initializer=tf.constant_initializer(0), trainable=False)
-        print(mask)
-        output = tf.nn.conv2d(_input, weight, [1, 1, 1, 1], padding='SAME')
+        mask = tf.get_variable("mask", [kernel_size, kernel_size, in_channels, out_channels],
+                               initializer=tf.constant_initializer(1), trainable=False)
+        output = tf.nn.conv2d(_input, tf.multiply(weight, mask), [1, 1, 1, 1], padding='SAME')
         assert output.get_shape()[-1] % self.group == 0, "group number can not be divided by output channels"
         return output
 
@@ -479,25 +479,28 @@ class CondenseNet:
         return old_stage != self.stage
 
     def dropping(self):
+        print("stage_%d" % self.stage)
         for i in range(self.total_blocks):
             for j in range(self.layers_per_block):
+                print("pruning the Block_%d/layer_%d/bottleneck/learned_group_conv" % (i, j))
                 with tf.variable_scope("Block_%d/layer_%d/bottleneck/learned_group_conv" % (i, j), reuse=True):
                     weight = tf.get_variable("weight")
                     mask = tf.get_variable("mask")
                     in_channels = int(weight.get_shape()[-2])
                     d_in = in_channels // self.condense_factor
                     d_out = int(weight.get_shape()[-1]) // self.group
+                    zeros = tf.zeros([d_out])
                     weight_s = tf.abs(tf.squeeze(weight))
                     k = in_channels - (d_in * self.stage)
                     # Sort and Drop
                     for group in range(self.group):
-                        wi = weight_s[:, i * d_out:(i + 1) * d_out]
+                        wi = weight_s[:, group * d_out:(group + 1) * d_out]
                         # take corresponding delta index
                         _, index = tf.nn.top_k(tf.reduce_sum(wi, axis=1), k=k, sorted=True)
+                        d = self.sess.run(index)
                         for _in in range(d_in):
                             # Assume only apply to 1x1 conv to speed up
-                            d = self.sess.run(index[-(_in + 1)])
-                            self.sess.run(tf.assign(weight[0, 0, d, group * d_out:(group + 1) * d_out], mask))
+                            self.sess.run(tf.assign(weight[0, 0, d[-(_in + 1)], group*d_out:(group + 1)*d_out], zeros))
 
 
     def weight_variable_msra(self, shape, name=None):
