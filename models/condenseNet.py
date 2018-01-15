@@ -500,7 +500,7 @@ class CondenseNet:
                         d = self.sess.run(index)
                         for _in in range(d_in):
                             # Assume only apply to 1x1 conv to speed up
-                            self.sess.run(tf.assign(weight[0, 0, d[-(_in + 1)], group*d_out:(group + 1)*d_out], zeros))
+                            self.sess.run(tf.assign(mask[0, 0, d[-(_in + 1)], group*d_out:(group + 1)*d_out], zeros))
 
 
     def weight_variable_msra(self, shape, name=None):
