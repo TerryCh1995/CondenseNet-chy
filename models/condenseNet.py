@@ -490,14 +490,14 @@ class CondenseNet:
                     weight_s = tf.abs(tf.squeeze(weight))
                     k = in_channels - (d_in * self.stage)
                     # Sort and Drop
-                    for i in range(self.group):
+                    for group in range(self.group):
                         wi = weight_s[:, i * d_out:(i + 1) * d_out]
                         # take corresponding delta index
                         _, index = tf.nn.top_k(tf.reduce_sum(wi, axis=1), k=k, sorted=True)
-                        for j in range(d_in):
+                        for _in in range(d_in):
                             # Assume only apply to 1x1 conv to speed up
-                            d = self.sess.run(index[-(j + 1)])
-                            self.sess.run(tf.assign(weight[0, 0, d, i * d_out:(i + 1) * d_out], mask))
+                            d = self.sess.run(index[-(_in + 1)])
+                            self.sess.run(tf.assign(weight[0, 0, d, group * d_out:(group + 1) * d_out], mask))
 
 
     def weight_variable_msra(self, shape, name=None):
