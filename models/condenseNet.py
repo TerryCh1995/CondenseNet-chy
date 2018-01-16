@@ -81,10 +81,10 @@ class CondenseNet:
         self.should_save_model = should_save_model
         self.renew_logs = renew_logs
         self.batches_step = 0
+
         self.group = group
         self.condense_factor = condense_factor
         self.stage = 0
-        self.batch_size = 16
         self._define_inputs()
         self._build_graph()
         self._initialize_session()
@@ -248,15 +248,14 @@ class CondenseNet:
         return logits
 
     def shufflelayers(self, _input):
-
         height = int(_input.get_shape()[1])
         width = int(_input.get_shape()[2])
         features_num = int(_input.get_shape()[3])
         features_per_group = features_num // self.group
         # transpose and shuffle
-        _input = tf.reshape(_input, shape=[self.batch_size, height, width, features_per_group, self.group])
+        _input = tf.reshape(_input, shape=[-1, height, width, features_per_group, self.group])
         _input = tf.transpose(_input, perm=[0, 1, 2, 4, 3])
-        output = tf.reshape(_input, [self.batch_size, height, width, -1])
+        output = tf.reshape(_input, [-1, height, width, features_num])
         return output
 
     def groupconv2d(self, _input, out_features, kernel_size, strides):
@@ -342,11 +341,10 @@ class CondenseNet:
             logits = self.transition_layer_to_classes(output)
         prediction = tf.nn.softmax(logits)
         # Losses
-        loss = tf.get_variable("loss", [1], initializer=tf.constant_initializer(0.0))
         cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=self.labels))
         self.cross_entropy = cross_entropy
         l2_loss = tf.add_n([tf.nn.l2_loss(var) for var in tf.trainable_variables()])
-        lasso_loss = self.lasso_loss(loss)
+        lasso_loss = self.lasso_loss()
         # optimizer and training step
         optimizer = tf.train.MomentumOptimizer(
             self.learning_rate, self.nesterov_momentum, use_nesterov=True)
@@ -443,26 +441,28 @@ class CondenseNet:
         mean_accuracy = np.mean(total_accuracy)
         return mean_loss, mean_accuracy
 
-    def lasso_loss(self, loss):
+    def lasso_loss(self):
         """
         generate the lasso_loss regular item
         """
-        with tf.variable_scope("", reuse=True):
-            for i in range(self.total_blocks):
-                for j in range(self.layers_per_block):
-                    with tf.variable_scope("Block_%d/layer_%d/bottleneck/learned_group_conv" % (i, j)):
-                        weight = tf.get_variable("weight")
+        lasso_array = []
+        for i in range(self.total_blocks):
+            for j in range(self.layers_per_block):
+                with tf.variable_scope("Block_%d/layer_%d/bottleneck/learned_group_conv" % (i, j), reuse=True):
+                    weight = tf.get_variable("weight")
+                    mask = tf.get_variable("mask")
                     in_channels = int(weight.get_shape()[-2])
                     out_channels = int(weight.get_shape()[-1])
                     d_out = out_channels // self.group
                     assert weight.get_shape()[0] == 1
-                    weight = tf.squeeze(weight)
-                    weight = tf.square(weight)
-                    tf.reshape(weight, [in_channels, d_out, self.group])
-                    weight = tf.sqrt(tf.reduce_sum(weight, axis=1))
+                    weight = tf.square(tf.squeeze(tf.multiply(weight, mask)))
+                    weight = tf.reshape(weight, [in_channels, self.group, d_out])
+                    weight = tf.sqrt(tf.reduce_sum(weight, axis=2))
                     weight = tf.reduce_sum(weight)
-                    loss = tf.add(loss, weight)
-        return loss
+                    lasso_array.append(weight)
+        lasso_loss = tf.add_n(lasso_array)
+        return lasso_loss
+
 
     def _check_drop(self):
         progress = self.globalprogress
@@ -490,7 +490,7 @@ class CondenseNet:
                     d_in = in_channels // self.condense_factor
                     d_out = int(weight.get_shape()[-1]) // self.group
                     zeros = tf.zeros([d_out])
-                    weight_s = tf.abs(tf.squeeze(weight))
+                    weight_s = tf.abs(tf.squeeze(tf.multiply(weight, mask)))
                     k = in_channels - (d_in * self.stage)
                     # Sort and Drop
                     for group in range(self.group):
