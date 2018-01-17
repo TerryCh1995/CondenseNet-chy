@@ -450,12 +450,11 @@ class CondenseNet:
             for j in range(self.layers_per_block):
                 with tf.variable_scope("Block_%d/layer_%d/bottleneck/learned_group_conv" % (i, j), reuse=True):
                     weight = tf.get_variable("weight")
-                    mask = tf.get_variable("mask")
                     in_channels = int(weight.get_shape()[-2])
                     out_channels = int(weight.get_shape()[-1])
                     d_out = out_channels // self.group
                     assert weight.get_shape()[0] == 1
-                    weight = tf.square(tf.squeeze(tf.multiply(weight, mask)))
+                    weight = tf.square(tf.squeeze(weight))
                     weight = tf.reshape(weight, [in_channels, self.group, d_out])
                     weight = tf.sqrt(tf.reduce_sum(weight, axis=2))
                     weight = tf.reduce_sum(weight)
@@ -495,6 +494,7 @@ class CondenseNet:
                     print("k=%d" % k)
                     # Sort and Drop
                     for group in range(self.group):
+                        start_time = time.time()
                         wi = weight_s[:, group*d_out:(group + 1)*d_out]
                         # take corresponding delta index
                         _, index = tf.nn.top_k(tf.reduce_sum(wi, axis=1), k=k, sorted=True)
@@ -503,6 +503,7 @@ class CondenseNet:
                         for _in in range(d_in):
                             # Assume only apply to 1x1 conv to speed up
                             self.sess.run(tf.assign(mask[0, 0, d[-(_in + 1)], group*d_out:(group + 1)*d_out], zeros))
+                        print(str(time.time()-start_time))
 
 
     def weight_variable_msra(self, shape, name=None):
