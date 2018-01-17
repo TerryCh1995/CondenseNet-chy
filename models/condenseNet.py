@@ -485,25 +485,31 @@ class CondenseNet:
                 with tf.variable_scope("Block_%d/layer_%d/bottleneck/learned_group_conv" % (i, j), reuse=True):
                     weight = tf.get_variable("weight")
                     mask = tf.get_variable("mask")
-                    in_channels = int(weight.get_shape()[-2])
-                    d_in = in_channels // self.condense_factor
-                    d_out = int(weight.get_shape()[-1]) // self.group
-                    zeros = tf.zeros([d_out])
-                    weight_s = tf.abs(tf.squeeze(tf.multiply(weight, mask)))
-                    k = in_channels - (d_in * (self.stage-1))
-                    print("k=%d" % k)
-                    # Sort and Drop
-                    for group in range(self.group):
-                        start_time = time.time()
-                        wi = weight_s[:, group*d_out:(group + 1)*d_out]
-                        # take corresponding delta index
-                        _, index = tf.nn.top_k(tf.reduce_sum(wi, axis=1), k=k, sorted=True)
-                        print("top_%d, d_in %d" % (k, d_in))
-                        d = self.sess.run(index)
-                        for _in in range(d_in):
-                            # Assume only apply to 1x1 conv to speed up
-                            self.sess.run(tf.assign(mask[0, 0, d[-(_in + 1)], group*d_out:(group + 1)*d_out], zeros))
-                        print(str(time.time()-start_time))
+                    self._dropping(weight, mask)
+
+    def _dropping(self, weight, mask):
+        out_channels = int(weight.get_shape()[-1])
+        in_channels = int(weight.get_shape()[-2])
+        d_in = in_channels // self.condense_factor
+        d_out = out_channels // self.group
+        ones = np.ones([1, 1, in_channels, out_channels])
+        weight_s = tf.abs(tf.squeeze(tf.multiply(weight, mask)))
+        k = in_channels - (d_in * (self.stage - 1))
+        print("k=%d" % k)
+        start_time = time.time()
+        # Sort and Drop
+        for group in range(self.group):
+            wi = weight_s[:, group * d_out:(group + 1) * d_out]
+            # take corresponding delta index
+            _, index = tf.nn.top_k(tf.reduce_sum(wi, axis=1), k=k, sorted=True)
+            print("top_%d, d_in %d" % (k, d_in))
+            d = self.sess.run(index)
+            for _in in range(d_in):
+                # Assume only apply to 1x1 conv to speed up
+                ones[0, 0, d[-(_in + 1)], group * d_out:(group + 1) * d_out] = 0
+        self.sess.run(tf.assign(mask, ones))
+        print(str(time.time() - start_time))
+
 
 
     def weight_variable_msra(self, shape, name=None):
