@@ -24,9 +24,11 @@ with tf.variable_scope("scope"):
     #     for _in in range(d_in):
     #         sess.run(tf.assign(mask[0, 0, index[k - 1 - _in], group * d_out:(group + 1) * d_out], zeros))
     #         print(group,_in)
+    tensor = tf.constant([[1,2,3,4],[1,2,3,4],[1,2,3,4],[1,2,3,4]])
+    tensor_r = tf.reshape(tensor,[4,2,2])
     sess = tf.Session()
-    one = tf.ones([2, 3, 4])
-    print(sess.run(tf.reduce_sum(one)))
+    print(sess.run(tensor))
+    print(sess.run(tensor_r))
 
 
 

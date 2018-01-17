@@ -491,12 +491,14 @@ class CondenseNet:
                     d_out = int(weight.get_shape()[-1]) // self.group
                     zeros = tf.zeros([d_out])
                     weight_s = tf.abs(tf.squeeze(tf.multiply(weight, mask)))
-                    k = in_channels - (d_in * self.stage)
+                    k = in_channels - (d_in * (self.stage-1))
+                    print("k=%d" % k)
                     # Sort and Drop
                     for group in range(self.group):
-                        wi = weight_s[:, group * d_out:(group + 1) * d_out]
+                        wi = weight_s[:, group*d_out:(group + 1)*d_out]
                         # take corresponding delta index
                         _, index = tf.nn.top_k(tf.reduce_sum(wi, axis=1), k=k, sorted=True)
+                        print("top_%d, d_in %d" % (k, d_in))
                         d = self.sess.run(index)
                         for _in in range(d_in):
                             # Assume only apply to 1x1 conv to speed up
