@@ -1,6 +1,7 @@
 import os
 import time
 import shutil
+import math
 from datetime import timedelta
 
 import numpy as np
@@ -100,7 +101,7 @@ class CondenseNet:
         self.sess.run(tf.global_variables_initializer())
         logswriter = tf.summary.FileWriter
         self.saver = tf.train.Saver()
-        self.summary_writer = logswriter(self.logs_path)
+        self.summary_writer = logswriter(self.logs_path,graph_def=self.sess.graph_def)
 
     def _count_trainable_params(self):
         total_parameters = 0
@@ -221,9 +222,11 @@ class CondenseNet:
         return output
 
     def transition_layer(self, _input):
-        #call composite function with 1x1 kernel
-        out_features = int(int(_input.get_shape()[-1]) * self.reduction)
-        output = self.composite_function(_input, out_features=out_features, kernel_size=1)
+        output = _input
+        if self.reduction != 1:
+            #call composite function with 1x1 kernel
+            out_features = int(int(_input.get_shape()[-1]) * self.reduction)
+            output = self.composite_function(_input, out_features=out_features, kernel_size=1)
         #run averagepooling
         output = self.avg_pooling(output, k=2)
         return output
@@ -357,19 +360,16 @@ class CondenseNet:
         n_epochs = train_params['n_epochs']
         learning_rate = train_params['initial_learning_rate']
         batch_size = train_params['batch_size']
-        reduce_lr_epoch_1 = train_params['reduce_lr_epoch_1']
-        reduce_lr_epoch_2 = train_params['reduce_lr_epoch_2']
+        # reduce_lr_epoch_1 = train_params['reduce_lr_epoch_1']
+        # reduce_lr_epoch_2 = train_params['reduce_lr_epoch_2']
         total_start_time = time.time()
         for epoch in range(1, n_epochs + 1):
             self.globalprogress = epoch / n_epochs
             print("\n", '-' * 30, "Train epoch: %d" % epoch, '-' * 30, '\n')
             start_time = time.time()
-            if epoch == reduce_lr_epoch_1 or epoch == reduce_lr_epoch_2:
-                learning_rate = learning_rate / 10
-                print("Decrease learning rate, new lr = %f" % learning_rate)
             print("Training...")
             loss, acc = self.train_one_epoch(
-                self.data_provider.train, batch_size, learning_rate)
+                self.data_provider.train, batch_size, learning_rate, n_epochs, epoch)
             if self.should_save_logs:
                 self.log_loss_accuracy(loss, acc, epoch, prefix='train')
 
@@ -394,17 +394,19 @@ class CondenseNet:
         print("\nTotal training time: %s" % str(timedelta(
             seconds=total_training_time)))
 
-    def train_one_epoch(self, data, batch_size, learning_rate):
+    def train_one_epoch(self, data, batch_size, learning_rate, n_epochs, epoch):
         num_examples = data.num_examples
         total_loss = []
         total_accuracy = []
-        for i in range(num_examples // batch_size):
+        n_batches = num_examples // batch_size
+        for i in range(n_batches):
+            cos_learning_rate = self.cosine_learning_rate(learning_rate, n_epochs, epoch, n_batches, i)
             batch = data.next_batch(batch_size)
             images, labels = batch
             feed_dict = {
                 self.images: images,
                 self.labels: labels,
-                self.learning_rate: learning_rate,
+                self.learning_rate: cos_learning_rate,
                 self.is_training: True,
             }
             fetches = [self.train_step, self.cross_entropy, self.accuracy]
@@ -462,7 +464,6 @@ class CondenseNet:
         lasso_loss = tf.add_n(lasso_array)
         return lasso_loss
 
-
     def _check_drop(self):
         progress = self.globalprogress
         old_stage = self.stage
@@ -510,6 +511,10 @@ class CondenseNet:
         self.sess.run(tf.assign(mask, ones))
         print(str(time.time() - start_time))
 
+    def cosine_learning_rate(self, learning_rate, n_epochs, epoch, n_batches, batch):
+        t_total = n_epochs*n_batches
+        t_cur = epoch*n_batches+batch
+        return 0.5*learning_rate*(1 + math.cos(math.pi*t_total/t_cur))
 
 
     def weight_variable_msra(self, shape, name=None):
