@@ -284,9 +284,11 @@ class CondenseNet:
         assert _input.get_shape()[-1] % self.condense_factor == 0, "condensation factor can not be divided by input channels"
         weight = self.weight_variable_msra(shape=[kernel_size, kernel_size, in_channels, out_channels],
                                            name="weight")
-        print(weight)
+        tf.add_to_collection('learned_group_layer', weight)
         mask = tf.get_variable("mask", [kernel_size, kernel_size, in_channels, out_channels],
                                initializer=tf.constant_initializer(1), trainable=False)
+        tf.add_to_collection('mask', mask)
+        tf.add_to_collection('lasso', self.lasso_loss_regularizer(tf.multiply(weight, mask)))
         output = tf.nn.conv2d(_input, tf.multiply(weight, mask), [1, 1, 1, 1], padding='SAME')
         assert output.get_shape()[-1] % self.group == 0, "group number can not be divided by output channels"
         return output
@@ -347,7 +349,7 @@ class CondenseNet:
         cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=self.labels))
         self.cross_entropy = cross_entropy
         l2_loss = tf.add_n([tf.nn.l2_loss(var) for var in tf.trainable_variables()])
-        lasso_loss = self.lasso_loss()
+        lasso_loss = tf.add_n(tf.get_collection('lasso'))
         # optimizer and training step
         optimizer = tf.train.MomentumOptimizer(
             self.learning_rate, self.nesterov_momentum, use_nesterov=True)
@@ -360,8 +362,6 @@ class CondenseNet:
         n_epochs = train_params['n_epochs']
         learning_rate = train_params['initial_learning_rate']
         batch_size = train_params['batch_size']
-        # reduce_lr_epoch_1 = train_params['reduce_lr_epoch_1']
-        # reduce_lr_epoch_2 = train_params['reduce_lr_epoch_2']
         total_start_time = time.time()
         for epoch in range(1, n_epochs + 1):
             self.globalprogress = epoch / n_epochs
@@ -372,6 +372,7 @@ class CondenseNet:
                 self.data_provider.train, batch_size, learning_rate, n_epochs, epoch)
             if self.should_save_logs:
                 self.log_loss_accuracy(loss, acc, epoch, prefix='train')
+            print("\nLearning rate : %f" % self.cos_learning_rate)
 
             if train_params.get('validation_set', False):
                 print("Validation...")
@@ -400,13 +401,13 @@ class CondenseNet:
         total_accuracy = []
         n_batches = num_examples // batch_size
         for i in range(n_batches):
-            cos_learning_rate = self.cosine_learning_rate(learning_rate, n_epochs, epoch, n_batches, i)
+            self.cos_learning_rate = self.cosine_learning_rate(learning_rate, n_epochs, epoch, n_batches, i)
             batch = data.next_batch(batch_size)
             images, labels = batch
             feed_dict = {
                 self.images: images,
                 self.labels: labels,
-                self.learning_rate: cos_learning_rate,
+                self.learning_rate: self.cos_learning_rate,
                 self.is_training: True,
             }
             fetches = [self.train_step, self.cross_entropy, self.accuracy]
@@ -443,26 +444,16 @@ class CondenseNet:
         mean_accuracy = np.mean(total_accuracy)
         return mean_loss, mean_accuracy
 
-    def lasso_loss(self):
-        """
-        generate the lasso_loss regular item
-        """
-        lasso_array = []
-        for i in range(self.total_blocks):
-            for j in range(self.layers_per_block):
-                with tf.variable_scope("Block_%d/layer_%d/bottleneck/learned_group_conv" % (i, j), reuse=True):
-                    weight = tf.get_variable("weight")
-                    in_channels = int(weight.get_shape()[-2])
-                    out_channels = int(weight.get_shape()[-1])
-                    d_out = out_channels // self.group
-                    assert weight.get_shape()[0] == 1
-                    weight = tf.square(tf.squeeze(weight))
-                    weight = tf.reshape(weight, [in_channels, self.group, d_out])
-                    weight = tf.sqrt(tf.reduce_sum(weight, axis=2))
-                    weight = tf.reduce_sum(weight)
-                    lasso_array.append(weight)
-        lasso_loss = tf.add_n(lasso_array)
-        return lasso_loss
+    def lasso_loss_regularizer(self, variable):
+        in_channels = int(variable.get_shape()[-2])
+        out_channels = int(variable.get_shape()[-1])
+        d_out = out_channels // self.group
+        assert variable.get_shape()[0] == 1
+        variable = tf.square(tf.squeeze(variable))
+        variable = tf.reshape(variable, [in_channels, self.group, d_out])
+        variable = tf.sqrt(tf.reduce_sum(variable, axis=2))
+        variable = tf.reduce_sum(variable)
+        return variable
 
     def _check_drop(self):
         progress = self.globalprogress
@@ -479,14 +470,11 @@ class CondenseNet:
         return old_stage != self.stage
 
     def dropping(self):
-        print("stage_%d" % self.stage)
-        for i in range(self.total_blocks):
-            for j in range(self.layers_per_block):
-                print("pruning the Block_%d/layer_%d/bottleneck/learned_group_conv" % (i, j))
-                with tf.variable_scope("Block_%d/layer_%d/bottleneck/learned_group_conv" % (i, j), reuse=True):
-                    weight = tf.get_variable("weight")
-                    mask = tf.get_variable("mask")
-                    self._dropping(weight, mask)
+        print("dropping")
+        weights = tf.get_collection('weight')
+        masks = tf.get_collection('mask')
+        for pair in zip(weights, masks):
+            self._dropping(pair[0], pair[1])
 
     def _dropping(self, weight, mask):
         out_channels = int(weight.get_shape()[-1])
@@ -514,7 +502,7 @@ class CondenseNet:
     def cosine_learning_rate(self, learning_rate, n_epochs, epoch, n_batches, batch):
         t_total = n_epochs*n_batches
         t_cur = epoch*n_batches+batch
-        return 0.5*learning_rate*(1 + math.cos(math.pi*t_total/t_cur))
+        return 0.5*learning_rate*(1 + math.cos(math.pi*t_cur/t_total))
 
 
     def weight_variable_msra(self, shape, name=None):
