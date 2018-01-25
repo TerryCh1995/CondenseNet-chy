@@ -4,7 +4,7 @@ from models.condenseNet import CondenseNet
 from data_providers.utils import get_data_provider_by_name
 
 train_params_cifar = {
-    'batch_size': 64,
+    'batch_size': 16,
     'n_epochs': 10,
     'increasing_growth_rate': 8,
     'initial_learning_rate': 0.1,

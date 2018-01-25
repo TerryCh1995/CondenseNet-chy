@@ -106,6 +106,7 @@ class CondenseNet:
     def _count_trainable_params(self):
         total_parameters = 0
         for variable in tf.trainable_variables():
+            print(variable)
             shape = variable.get_shape()
             variable_parametes = 1
             for dim in shape:
@@ -290,7 +291,7 @@ class CondenseNet:
         mask = tf.get_variable("mask", [kernel_size, kernel_size, in_channels, out_channels],
                                initializer=tf.constant_initializer(1), trainable=False)
         tf.add_to_collection('mask', mask)
-        tf.add_to_collection('lasso', self.lasso_loss_regularizer(tf.multiply(weight, mask)))
+        tf.add_to_collection('lasso', self.lasso_loss_regularizer(weight))
         output = tf.nn.conv2d(_input, tf.multiply(weight, mask), [1, 1, 1, 1], padding='SAME')
         assert output.get_shape()[-1] % self.group == 0, "group number can not be divided by output channels"
         return output
