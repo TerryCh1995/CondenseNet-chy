@@ -210,8 +210,8 @@ class CondenseNet:
         # call composite function with 3*3 Conv layers
         with tf.variable_scope("bottleneck"):
             bottleneck_out = self.bottleneck_condense(_input, out_features=growth_rate * 4)
-        shuffle_out = self.shufflelayers(bottleneck_out)
-        comp_out = self.composite_function(shuffle_out, out_features=growth_rate)
+        # shuffle_out = self.shufflelayers(bottleneck_out)
+        comp_out = self.composite_function(bottleneck_out, out_features=growth_rate)
         # concatenate _input with out from the composite layers
         output = tf.concat(axis=3, values=(_input, comp_out))
         return output
