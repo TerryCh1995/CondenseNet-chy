@@ -210,8 +210,8 @@ class ShuffleNet:
         # call composite function with 3*3 Conv layers
         with tf.variable_scope("bottleneck"):
             bottleneck_out = self.bottleneck_condense(_input, out_features=growth_rate * 4)
-        # shuffle_out = self.shufflelayers(bottleneck_out)
-        comp_out = self.composite_function(bottleneck_out, out_features=growth_rate)
+        shuffle_out = self.shufflelayers(bottleneck_out)
+        comp_out = self.composite_function(shuffle_out, out_features=growth_rate)
         # concatenate _input with out from the composite layers
         output = tf.concat(axis=3, values=(_input, comp_out))
         return output
@@ -265,17 +265,14 @@ class ShuffleNet:
 
     def groupconv2d(self, _input, out_features, kernel_size, strides):
         # group the feature maps
+        features_num = int(_input.get_shape()[-1])
+        convolve = lambda i, k: tf.nn.conv2d(i, k, strides=strides, padding='SAME')
         with tf.variable_scope("groupConv"):
-            features_num = int(_input.get_shape()[-1])
-            grouped_features = tf.split(_input, num_or_size_splits=self.group, axis=3)
-            group_ouputs = []
-            for i in range(self.group):
-                group_ouputs.append(self.conv2d(grouped_features[i],
-                                                out_features=out_features // self.group,
-                                                kernel_size=kernel_size,
-                                                strides=strides,
-                                                name='group_kernel_%d' % i))
-            output = tf.concat(group_ouputs, axis=3)
+            weight = tf.get_variable('weights', shape=[kernel_size, kernel_size, features_num//self.group, out_features])
+            input_groups = tf.split(axis=3, num_or_size_splits=self.group, value=_input)
+            weight_groups = tf.split(axis=3, num_or_size_splits=self.group, value = weight)
+            output_groups = [convolve(i, k) for i, k in zip(input_groups, weight_groups)]
+            output = tf.concat(axis=3, values=output_groups)
             return output
 
     def learned_group_conv2d(self, _input, kernel_size, out_channels):

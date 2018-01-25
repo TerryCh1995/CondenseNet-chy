@@ -266,17 +266,14 @@ class CondenseNet:
 
     def groupconv2d(self, _input, out_features, kernel_size, strides):
         # group the feature maps
+        features_num = int(_input.get_shape()[-1])
+        convolve = lambda i, k: tf.nn.conv2d(i, k, strides=strides, padding='SAME')
         with tf.variable_scope("groupConv"):
-            features_num = int(_input.get_shape()[-1])
-            grouped_features = tf.split(_input, num_or_size_splits=self.group, axis=3)
-            group_ouputs = []
-            for i in range(self.group):
-                group_ouputs.append(self.conv2d(grouped_features[i],
-                                                out_features=out_features // self.group,
-                                                kernel_size=kernel_size,
-                                                strides=strides,
-                                                name='group_kernel_%d' % i))
-            output = tf.concat(group_ouputs, axis=3)
+            weight = tf.get_variable('weights', shape=[kernel_size, kernel_size, features_num//self.group, out_features])
+            input_groups = tf.split(axis=3, num_or_size_splits=self.group, value=_input)
+            weight_groups = tf.split(axis=3, num_or_size_splits=self.group, value = weight)
+            output_groups = [convolve(i, k) for i, k in zip(input_groups, weight_groups)]
+            output = tf.concat(axis=3, values=output_groups)
             return output
 
     def learned_group_conv2d(self, _input, kernel_size, out_channels):
@@ -290,7 +287,7 @@ class CondenseNet:
         mask = tf.get_variable("mask", [kernel_size, kernel_size, in_channels, out_channels],
                                initializer=tf.constant_initializer(1), trainable=False)
         tf.add_to_collection('mask', mask)
-        tf.add_to_collection('lasso', self.lasso_loss_regularizer(weight))
+        # tf.add_to_collection('lasso', self.lasso_loss_regularizer(weight))
         output = tf.nn.conv2d(_input, tf.multiply(weight, mask), [1, 1, 1, 1], padding='SAME')
         assert output.get_shape()[-1] % self.group == 0, "group number can not be divided by output channels"
         return output
@@ -350,11 +347,11 @@ class CondenseNet:
         cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=self.labels))
         self.cross_entropy = cross_entropy
         l2_loss = tf.add_n([tf.nn.l2_loss(var) for var in tf.trainable_variables()])
-        lasso_loss = tf.add_n(tf.get_collection('lasso'))
+        # lasso_loss = tf.add_n(tf.get_collection('lasso'))
         # optimizer and training step
         optimizer = tf.train.MomentumOptimizer(
             self.learning_rate, self.nesterov_momentum, use_nesterov=True)
-        self.train_step = optimizer.minimize(cross_entropy + l2_loss * self.weight_decay + lasso_loss*self.lasso_decay)
+        self.train_step = optimizer.minimize(cross_entropy + l2_loss * self.weight_decay)
 
         correct_prediction = tf.equal(tf.argmax(prediction, 1), tf.argmax(self.labels, 1))
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
