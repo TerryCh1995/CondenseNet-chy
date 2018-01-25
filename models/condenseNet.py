@@ -326,7 +326,6 @@ class CondenseNet:
         return output
 
     def _build_graph(self):
-        growth_rate = self.increasing_growth_rate
         layers_per_block = self.layers_per_block
         # first initial 3x3 conv to first_output_features
         with tf.variable_scope("Initial_convolution"):
@@ -337,7 +336,7 @@ class CondenseNet:
                     strides=[1, 1, 1, 1]
             )
         for block in range(self.total_blocks):
-            growth_rate = growth_rate * (2**block)
+            growth_rate = self.increasing_growth_rate * (2**block)
             with tf.variable_scope("Block_%d" % block):
                 output = self.add_block(output, growth_rate, layers_per_block)
             # last block exist without transition layers
