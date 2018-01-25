@@ -101,7 +101,7 @@ class CondenseNet:
         self.sess.run(tf.global_variables_initializer())
         logswriter = tf.summary.FileWriter
         self.saver = tf.train.Saver()
-        self.summary_writer = logswriter(self.logs_path,graph_def=self.sess.graph_def)
+        self.summary_writer = logswriter(self.logs_path, graph=self.sess.graph)
 
     def _count_trainable_params(self):
         total_parameters = 0
@@ -162,7 +162,9 @@ class CondenseNet:
             tf.Summary.Value(
                 tag='loss_%s' % prefix, simple_value=float(loss)),
             tf.Summary.Value(
-                tag='accuracy_%s' % prefix, simple_value=float(accuracy))
+                tag='accuracy_%s' % prefix, simple_value=float(accuracy)),
+            tf.Summary.Value(
+                tag='learning_rate', simple_value=self.cos_learning_rate)
         ])
         self.summary_writer.add_summary(summary, epoch)
 
@@ -501,7 +503,7 @@ class CondenseNet:
 
     def cosine_learning_rate(self, learning_rate, n_epochs, epoch, n_batches, batch):
         t_total = n_epochs*n_batches
-        t_cur = epoch*n_batches+batch
+        t_cur = (epoch - 1)*n_batches+batch
         return 0.5*learning_rate*(1 + math.cos(math.pi*t_cur/t_total))
 
 
