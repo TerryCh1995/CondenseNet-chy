@@ -281,7 +281,6 @@ class CondenseNet:
 
     def learned_group_conv2d(self, _input, kernel_size, out_channels):
         in_channels = int(_input.get_shape()[-1])
-        mask_scale = out_channels // self.group
         # check group and condense_factor
         assert _input.get_shape()[-1] % self.group == 0, "group number cannot be divided by input channels"
         assert _input.get_shape()[-1] % self.condense_factor == 0, "condensation factor can not be divided by input channels"

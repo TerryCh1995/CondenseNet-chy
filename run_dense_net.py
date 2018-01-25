@@ -1,6 +1,7 @@
 import argparse
 
 from models.condenseNet import CondenseNet
+from models.ShuffleModel import ShuffleNet
 from data_providers.utils import get_data_provider_by_name
 
 train_params_cifar = {
@@ -135,7 +136,7 @@ if __name__ == '__main__':
     print("Prepare training data...")
     data_provider = get_data_provider_by_name(args.dataset, train_params)
     print("Initialize the model..")
-    model = CondenseNet(data_provider=data_provider, **model_params)
+    model = ShuffleNet(data_provider=data_provider, **model_params)
     if args.train:
         print("Data provider train images: ", data_provider.train.num_examples)
         model.train_all_epochs(train_params)
