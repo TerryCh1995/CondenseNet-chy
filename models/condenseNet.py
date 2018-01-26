@@ -346,11 +346,11 @@ class CondenseNet:
         cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=self.labels))
         self.cross_entropy = cross_entropy
         l2_loss = tf.add_n([tf.nn.l2_loss(var) for var in tf.trainable_variables()])
-        lasso_loss = tf.add_n(tf.get_collection('lasso'))
+        # lasso_loss = tf.add_n(tf.get_collection('lasso'))
         # optimizer and training step
         optimizer = tf.train.MomentumOptimizer(
             self.learning_rate, self.nesterov_momentum, use_nesterov=True)
-        self.train_step = optimizer.minimize(cross_entropy + l2_loss * self.weight_decay + lasso_loss*self.weight_decay)
+        self.train_step = optimizer.minimize(cross_entropy + l2_loss * self.weight_decay)
 
         correct_prediction = tf.equal(tf.argmax(prediction, 1), tf.argmax(self.labels, 1))
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
@@ -481,7 +481,6 @@ class CondenseNet:
         ones = np.ones([1, 1, in_channels, out_channels])
         weight_s = tf.abs(tf.squeeze(tf.multiply(weight, mask)))
         k = in_channels - (d_in * (self.stage - 1))
-        start_time = time.time()
         # Sort and Drop
         for group in range(self.group):
             wi = weight_s[:, group * d_out:(group + 1) * d_out]
@@ -492,7 +491,6 @@ class CondenseNet:
                 # Assume only apply to 1x1 conv to speed up
                 ones[0, 0, d[-(_in + 1)], group * d_out:(group + 1) * d_out] = 0
         self.sess.run(tf.assign(mask, ones))
-        print(str(time.time() - start_time))
 
     def cosine_learning_rate(self, learning_rate, n_epochs, epoch, n_batches, batch):
         t_total = n_epochs*n_batches
