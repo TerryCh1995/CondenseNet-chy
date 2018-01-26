@@ -6,7 +6,7 @@ from data_providers.utils import get_data_provider_by_name
 
 train_params_cifar = {
     'batch_size': 32,
-    'n_epochs': 10,
+    'n_epochs': 5,
     'increasing_growth_rate': 8,
     'initial_learning_rate': 0.1,
     'reduce_lr_epoch_1': 5,  # epochs * 0.5

@@ -106,7 +106,6 @@ class CondenseNet:
     def _count_trainable_params(self):
         total_parameters = 0
         for variable in tf.trainable_variables():
-            print(variable)
             shape = variable.get_shape()
             variable_parametes = 1
             for dim in shape:
@@ -211,8 +210,8 @@ class CondenseNet:
         # call composite function with 3*3 Conv layers
         with tf.variable_scope("bottleneck"):
             bottleneck_out = self.bottleneck_condense(_input, out_features=growth_rate * 4)
-        # shuffle_out = self.shufflelayers(bottleneck_out)
-        comp_out = self.composite_function(bottleneck_out, out_features=growth_rate)
+        shuffle_out = self.shufflelayers(bottleneck_out)
+        comp_out = self.composite_function(shuffle_out, out_features=growth_rate)
         # concatenate _input with out from the composite layers
         output = tf.concat(axis=3, values=(_input, comp_out))
         return output
@@ -287,7 +286,7 @@ class CondenseNet:
         mask = tf.get_variable("mask", [kernel_size, kernel_size, in_channels, out_channels],
                                initializer=tf.constant_initializer(1), trainable=False)
         tf.add_to_collection('mask', mask)
-        # tf.add_to_collection('lasso', self.lasso_loss_regularizer(weight))
+        tf.add_to_collection('lasso', self.lasso_loss_regularizer(weight))
         output = tf.nn.conv2d(_input, tf.multiply(weight, mask), [1, 1, 1, 1], padding='SAME')
         assert output.get_shape()[-1] % self.group == 0, "group number can not be divided by output channels"
         return output
@@ -347,11 +346,11 @@ class CondenseNet:
         cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=self.labels))
         self.cross_entropy = cross_entropy
         l2_loss = tf.add_n([tf.nn.l2_loss(var) for var in tf.trainable_variables()])
-        # lasso_loss = tf.add_n(tf.get_collection('lasso'))
+        lasso_loss = tf.add_n(tf.get_collection('lasso'))
         # optimizer and training step
         optimizer = tf.train.MomentumOptimizer(
             self.learning_rate, self.nesterov_momentum, use_nesterov=True)
-        self.train_step = optimizer.minimize(cross_entropy + l2_loss * self.weight_decay)
+        self.train_step = optimizer.minimize(cross_entropy + l2_loss * self.weight_decay + lasso_loss*self.weight_decay)
 
         correct_prediction = tf.equal(tf.argmax(prediction, 1), tf.argmax(self.labels, 1))
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
@@ -469,10 +468,10 @@ class CondenseNet:
 
     def dropping(self):
         print("dropping")
-        weights = tf.get_collection('weight')
+        weights = tf.get_collection('learned_group_layer')
         masks = tf.get_collection('mask')
-        for pair in zip(weights, masks):
-            self._dropping(pair[0], pair[1])
+        for w, m in zip(weights, masks):
+            self._dropping(w, m)
 
     def _dropping(self, weight, mask):
         out_channels = int(weight.get_shape()[-1])
@@ -482,14 +481,12 @@ class CondenseNet:
         ones = np.ones([1, 1, in_channels, out_channels])
         weight_s = tf.abs(tf.squeeze(tf.multiply(weight, mask)))
         k = in_channels - (d_in * (self.stage - 1))
-        print("k=%d" % k)
         start_time = time.time()
         # Sort and Drop
         for group in range(self.group):
             wi = weight_s[:, group * d_out:(group + 1) * d_out]
             # take corresponding delta index
             _, index = tf.nn.top_k(tf.reduce_sum(wi, axis=1), k=k, sorted=True)
-            print("top_%d, d_in %d" % (k, d_in))
             d = self.sess.run(index)
             for _in in range(d_in):
                 # Assume only apply to 1x1 conv to speed up
